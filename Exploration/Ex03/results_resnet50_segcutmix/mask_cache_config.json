@@ -1,0 +1,16 @@
+{
+  "model": "deeplabv3_resnet101",
+  "weights": "COCO_WITH_VOC_LABELS_V1",
+  "dog_class_id": 12,
+  "dog_class_name": "dog",
+  "segmentation_size": [
+    520,
+    520
+  ],
+  "mask_size": [
+    224,
+    224
+  ],
+  "dataset_dir": "/home/thkim0/datasets/stanfordimagenetdogs/Images",
+  "dataset_samples": 20580
+}

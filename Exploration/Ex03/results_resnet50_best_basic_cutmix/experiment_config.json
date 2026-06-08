@@ -1,0 +1,13 @@
+{
+  "experiment": "basic_cutmix_alpha0.2_p0.5_best_checkpoint",
+  "seed": 42,
+  "epochs": 20,
+  "batch_size": 16,
+  "optimizer": "SGD",
+  "learning_rate": 0.001,
+  "augmentation": "basic",
+  "batch_mix": "cutmix",
+  "mix_alpha": 0.2,
+  "mix_probability": 0.5,
+  "checkpoint_metric": "val_accuracy"
+}

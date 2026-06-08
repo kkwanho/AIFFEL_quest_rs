@@ -1,0 +1,90 @@
+{
+  "model": "resnet50",
+  "weights": "IMAGENET1K_V1",
+  "dataset": "/home/thkim0/datasets/stanfordimagenetdogs/Images",
+  "num_classes": 120,
+  "train_size": 11998,
+  "validation_size": 8582,
+  "image_size": [
+    224,
+    224
+  ],
+  "normalization_mean": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "normalization_std": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "epochs": 20,
+  "seed": 42,
+  "batch_size": 16,
+  "optimizer": "SGD",
+  "learning_rate": 0.001,
+  "mix_alpha": 1.0,
+  "experiments": [
+    {
+      "name": "no_aug",
+      "augmentation": "none",
+      "batch_mix": "none"
+    },
+    {
+      "name": "basic",
+      "augmentation": "basic",
+      "batch_mix": "none"
+    },
+    {
+      "name": "morejitter",
+      "augmentation": "morejitter",
+      "batch_mix": "none"
+    },
+    {
+      "name": "rotationaug",
+      "augmentation": "rotationaug",
+      "batch_mix": "none"
+    },
+    {
+      "name": "basic_mixup",
+      "augmentation": "basic",
+      "batch_mix": "mixup"
+    },
+    {
+      "name": "basic_cutmix",
+      "augmentation": "basic",
+      "batch_mix": "cutmix"
+    },
+    {
+      "name": "morejitter_mixup",
+      "augmentation": "morejitter",
+      "batch_mix": "mixup"
+    },
+    {
+      "name": "morejitter_cutmix",
+      "augmentation": "morejitter",
+      "batch_mix": "cutmix"
+    },
+    {
+      "name": "rotationaug_mixup",
+      "augmentation": "rotationaug",
+      "batch_mix": "mixup"
+    },
+    {
+      "name": "rotationaug_cutmix",
+      "augmentation": "rotationaug",
+      "batch_mix": "cutmix"
+    },
+    {
+      "name": "no_aug_mixup",
+      "augmentation": "none",
+      "batch_mix": "mixup"
+    },
+    {
+      "name": "no_aug_cutmix",
+      "augmentation": "none",
+      "batch_mix": "cutmix"
+    }
+  ]
+}

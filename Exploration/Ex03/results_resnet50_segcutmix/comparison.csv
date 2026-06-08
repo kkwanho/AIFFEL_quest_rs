@@ -1,0 +1,3 @@
+condition,area_rule,mix_probability,best_val_accuracy
+Basic + random rectangle CutMix,Beta(alpha=0.2),0.5,84.80540666511303
+Basic + Semantic Mask CutMix,DeepLab dog mask area,0.5,84.05965975297134

@@ -1,0 +1,17 @@
+{
+  "experiment": "basic_semantic_mask_cutmix_p0.5",
+  "seed": 42,
+  "epochs": 20,
+  "batch_size": 16,
+  "optimizer": "SGD",
+  "learning_rate": 0.001,
+  "augmentation": "basic",
+  "batch_mix": "semantic_mask_cutmix",
+  "mix_probability": 0.5,
+  "mix_alpha": null,
+  "label_weight": "actual_pasted_mask_area",
+  "mask_failure_policy": "skip_entire_batch_mix",
+  "initial_model_sha256": "0d7d077cf589e581e6b94d03e07a85d3911a46f683b9972684498327d005c960",
+  "train_indices_sha256": "77811abc456327ae4a99911df61fc926fd75541cedff92bdda2aef045a247492",
+  "val_indices_sha256": "c718b1070073d063d393f0d926409ad57a9e70b8534c5212d9a04bf3ca2c1ad1"
+}

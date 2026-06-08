@@ -1,0 +1,12 @@
+{
+  "experiment": "basic_semantic_mask_cutmix_p0.5",
+  "status": "completed",
+  "completed_epochs": 20,
+  "best_epoch": 20,
+  "best_val_loss": 0.5698104733994056,
+  "best_val_accuracy": 84.05965975297134,
+  "checkpoint": "semantic_cutmix_best.pt",
+  "history": "training_history.csv",
+  "comparison": "comparison.csv",
+  "saved_at": "2026-06-07"
+}
