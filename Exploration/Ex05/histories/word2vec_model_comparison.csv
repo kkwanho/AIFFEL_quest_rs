@@ -1,0 +1,13 @@
+model,embedding,best_val_acc,test_acc,label
+LSTM,From Scratch,0.8660555479545765,0.8630103545781882,"LSTM
+From Scratch"
+LSTM,Word2Vec,0.8680394034751676,0.8667738063754907,"LSTM
+Word2Vec"
+Double LSTM,From Scratch,0.866329183198796,0.8656752853103322,"Double LSTM
+From Scratch"
+Double LSTM,Word2Vec,0.8679709946641128,0.8671603230465651,"Double LSTM
+Word2Vec"
+Multi-kernel CNN,From Scratch,0.8634902175400192,0.8634172142319507,"Multi-kernel CNN
+From Scratch"
+Multi-kernel CNN,Word2Vec,0.8640032836229307,0.8636206440588319,"Multi-kernel CNN
+Word2Vec"
