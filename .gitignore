@@ -13,6 +13,7 @@ env/
 # OS / editor
 .DS_Store
 .vscode/
+.codex/
 
 # Model checkpoints
 *.pth
