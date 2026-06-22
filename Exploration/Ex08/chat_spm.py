@@ -678,6 +678,28 @@ def list_profiles() -> None:
         print(f"  checkpoint: {profile.checkpoint_path}")
 
 
+def select_profile() -> ModelProfile:
+    """번호 입력으로 사용할 tokenizer/checkpoint 조합을 선택한다."""
+
+    profiles = list(MODEL_PROFILES.values())
+    print("사용할 모델/tokenizer 조합을 선택하세요.")
+    for number, profile in enumerate(profiles, start=1):
+        print(f"{number}. {profile.name.upper()} SentencePiece + Transformer")
+
+    while True:
+        try:
+            selection = input("선택 (1 또는 2): ").strip()
+        except EOFError as exc:
+            raise ChatConfigurationError("모델 선택 입력이 종료되었습니다.") from exc
+
+        if selection.isdigit():
+            index = int(selection) - 1
+            if 0 <= index < len(profiles):
+                return profiles[index]
+
+        print(f"1부터 {len(profiles)} 사이의 번호를 입력하세요.")
+
+
 def run_chat(runtime: ChatRuntime) -> None:
     print("\n독립 질문-답변 모드입니다. 이전 대화 내용은 다음 입력에 전달되지 않습니다.")
     print("종료하려면 '종료', 'quit', 'exit', 'q' 중 하나를 입력하세요.\n")
@@ -711,8 +733,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--profile",
         choices=sorted(MODEL_PROFILES),
-        default="unigram",
-        help="사용할 tokenizer/checkpoint 프로필 (기본값: unigram)",
+        help="번호 선택을 건너뛰고 사용할 tokenizer/checkpoint 프로필을 지정합니다.",
     )
     parser.add_argument(
         "--tokenizer-path",
@@ -744,7 +765,12 @@ def main() -> int:
         list_profiles()
         return 0
 
-    profile = MODEL_PROFILES[args.profile]
+    try:
+        profile = MODEL_PROFILES[args.profile] if args.profile else select_profile()
+    except ChatConfigurationError as exc:
+        print(f"설정 오류: {exc}", file=sys.stderr)
+        return 1
+
     tokenizer_path = (args.tokenizer_path or profile.tokenizer_path).expanduser().resolve()
     checkpoint_path = (args.checkpoint_path or profile.checkpoint_path).expanduser().resolve()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
