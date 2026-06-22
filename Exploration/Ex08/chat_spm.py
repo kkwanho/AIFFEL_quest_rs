@@ -1,14 +1,12 @@
 """한국어 SentencePiece Transformer용 대화형 추론 CLI.
 
-이 스크립트는 ``quest.ipynb``와 ``quest_unigram.ipynb``에서 학습한
-한국어 Transformer 구조를 복원한다. 체크포인트와 SentencePiece 모델은
-학습할 때 사용한 정확한 조합이어야 한다.
+현재 디렉터리의 SentencePiece 모델과 ``histories``의 체크포인트를
+파일명 ID로 연결하여 한국어 Transformer 구조를 복원한다.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import math
 import os
 import re
@@ -46,30 +44,68 @@ class ChatInputError(ValueError):
 
 @dataclass(frozen=True)
 class ModelProfile:
-    """한 추론 모델을 구성하는 tokenizer/checkpoint 기본 조합."""
+    """자동으로 발견한 tokenizer/checkpoint 조합."""
 
-    name: str
-    tokenizer_type: str
+    tokenizer_id: str
     tokenizer_path: Path
     checkpoint_path: Path
     preprocess_profile: str = PREPROCESS_PROFILE
     architecture: str = ARCHITECTURE_NAME
 
 
-MODEL_PROFILES = {
-    "unigram": ModelProfile(
-        name="unigram",
-        tokenizer_type="unigram",
-        tokenizer_path=BASE_DIR / "spm_korean_chatbot_unigram.model",
-        checkpoint_path=BASE_DIR / "histories" / "transformer_korean_chatbot_unigram_best.pt",
-    ),
-    "bpe": ModelProfile(
-        name="bpe",
-        tokenizer_type="bpe",
-        tokenizer_path=BASE_DIR / "spm_korean_chatbot_bpe.model",
-        checkpoint_path=BASE_DIR / "histories" / "transformer_korean_chatbot_bpe_best.pt",
-    ),
-}
+def tokenizer_id_from_path(path: Path) -> str:
+    """파일명에서 tokenizer/checkpoint 연결에 사용할 ID를 반환한다."""
+
+    return path.stem.removeprefix("spm_")
+
+
+def discover_model_profiles(
+    base_dir: Path = BASE_DIR,
+    history_dir: Path | None = None,
+) -> list[ModelProfile]:
+    """``spm_<id>.model``과 파일명에 ``<id>``가 포함된 checkpoint를 찾는다."""
+
+    history_dir = history_dir or base_dir / "histories"
+    tokenizers = {
+        tokenizer_id_from_path(path): path
+        for path in sorted(base_dir.glob("spm_*.model"))
+        if tokenizer_id_from_path(path)
+    }
+    profiles: list[ModelProfile] = []
+
+    for checkpoint_path in sorted(history_dir.glob("*.pt")):
+        matches = [
+            tokenizer_id
+            for tokenizer_id in tokenizers
+            if tokenizer_id in checkpoint_path.stem
+        ]
+        if not matches:
+            continue
+
+        longest_length = max(map(len, matches))
+        longest_matches = sorted(
+            tokenizer_id for tokenizer_id in matches if len(tokenizer_id) == longest_length
+        )
+        if len(longest_matches) > 1:
+            ambiguous = ", ".join(longest_matches)
+            raise ChatConfigurationError(
+                f"checkpoint 파일명이 여러 tokenizer ID와 일치합니다: "
+                f"{checkpoint_path.name} ({ambiguous})"
+            )
+
+        tokenizer_id = longest_matches[0]
+        profiles.append(
+            ModelProfile(
+                tokenizer_id=tokenizer_id,
+                tokenizer_path=tokenizers[tokenizer_id],
+                checkpoint_path=checkpoint_path,
+            )
+        )
+
+    return sorted(
+        profiles,
+        key=lambda profile: (profile.tokenizer_id, profile.checkpoint_path.name),
+    )
 
 
 def preprocess_sentence(sentence: str) -> str:
@@ -387,22 +423,14 @@ def tokenizer_model_type(tokenizer_path: Path) -> str:
         ) from exc
 
 
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def require_files(profile: ModelProfile, tokenizer_path: Path, checkpoint_path: Path) -> None:
+def require_files(tokenizer_path: Path, checkpoint_path: Path) -> None:
     missing = [path for path in (tokenizer_path, checkpoint_path) if not path.is_file()]
     if not missing:
         return
 
     missing_text = "\n".join(f"  - {path}" for path in missing)
     raise ChatConfigurationError(
-        f"'{profile.name}' 프로필에 필요한 파일이 없습니다:\n{missing_text}\n"
+        f"추론에 필요한 파일이 없습니다:\n{missing_text}\n"
         "tokenizer와 checkpoint는 같은 학습 실행에서 만들어진 조합을 사용하세요."
     )
 
@@ -491,12 +519,11 @@ def metadata_value(
 
 def validate_tokenizer(
     profile: ModelProfile,
-    tokenizer_path: Path,
     tokenizer: spm.SentencePieceProcessor,
     actual_type: str,
     config: Mapping[str, Any],
     metadata: Mapping[str, Any],
-) -> bool:
+) -> None:
     if tokenizer.get_piece_size() != config["vocab_size"]:
         raise ChatConfigurationError(
             "vocab 크기가 맞지 않습니다: "
@@ -527,16 +554,6 @@ def validate_tokenizer(
             "체크포인트의 preprocess_profile이 선택한 프로필과 맞지 않습니다."
         )
 
-    expected_hash = metadata_value("tokenizer_sha256", config, metadata)
-    if expected_hash is not None:
-        actual_hash = file_sha256(tokenizer_path)
-        if str(expected_hash).lower() != actual_hash:
-            raise ChatConfigurationError(
-                "tokenizer SHA-256이 체크포인트 메타데이터와 맞지 않습니다."
-            )
-        return True
-    return False
-
 
 def validate_state_shapes(
     state_dict: Mapping[str, torch.Tensor],
@@ -563,24 +580,19 @@ def build_runtime(
     tokenizer_path: Path,
     checkpoint_path: Path,
     device: torch.device,
-) -> tuple[ChatRuntime, bool]:
-    require_files(profile, tokenizer_path, checkpoint_path)
+) -> ChatRuntime:
+    require_files(tokenizer_path, checkpoint_path)
 
     tokenizer = spm.SentencePieceProcessor()
     if not tokenizer.load(str(tokenizer_path)):
         raise ChatConfigurationError(f"SentencePiece 모델을 불러오지 못했습니다: {tokenizer_path}")
 
     actual_type = tokenizer_model_type(tokenizer_path)
-    if actual_type != profile.tokenizer_type:
-        raise ChatConfigurationError(
-            f"tokenizer 종류가 맞지 않습니다: 프로필={profile.tokenizer_type}, 파일={actual_type}"
-        )
 
     state_dict, config, metadata = load_checkpoint(checkpoint_path)
     validate_config(config)
-    hash_verified = validate_tokenizer(
+    validate_tokenizer(
         profile,
-        tokenizer_path,
         tokenizer,
         actual_type,
         config,
@@ -623,7 +635,7 @@ def build_runtime(
 
     model.to(device)
     model.eval()
-    return ChatRuntime(profile, model, tokenizer, preprocessor, config, device), hash_verified
+    return ChatRuntime(profile, model, tokenizer, preprocessor, config, device)
 
 
 def predict(runtime: ChatRuntime, sentence: str) -> str:
@@ -666,29 +678,25 @@ def predict(runtime: ChatRuntime, sentence: str) -> str:
     return runtime.tokenizer.decode_ids(generated_ids)
 
 
-def list_profiles() -> None:
-    print("사용 가능한 모델 프로필")
-    for profile in MODEL_PROFILES.values():
-        tokenizer_exists = profile.tokenizer_path.is_file()
-        checkpoint_exists = profile.checkpoint_path.is_file()
-        status = "사용 가능" if tokenizer_exists and checkpoint_exists else "파일 없음"
-        print(f"\n[{profile.name}] {status}")
-        print(f"  tokenizer type: {profile.tokenizer_type}")
-        print(f"  tokenizer: {profile.tokenizer_path}")
-        print(f"  checkpoint: {profile.checkpoint_path}")
-
-
-def select_profile() -> ModelProfile:
+def select_profile(profiles: list[ModelProfile]) -> ModelProfile:
     """번호 입력으로 사용할 tokenizer/checkpoint 조합을 선택한다."""
 
-    profiles = list(MODEL_PROFILES.values())
+    if not profiles:
+        raise ChatConfigurationError(
+            f"실행 가능한 모델 조합이 없습니다. {BASE_DIR.name}/spm_<id>.model과 "
+            "histories/의 <id>가 포함된 .pt 파일을 확인하세요."
+        )
+
     print("사용할 모델/tokenizer 조합을 선택하세요.")
     for number, profile in enumerate(profiles, start=1):
-        print(f"{number}. {profile.name.upper()} SentencePiece + Transformer")
+        print(
+            f"{number}. [{profile.tokenizer_id}] "
+            f"{profile.tokenizer_path.name} + {profile.checkpoint_path.name}"
+        )
 
     while True:
         try:
-            selection = input("선택 (1 또는 2): ").strip()
+            selection = input(f"선택 (1-{len(profiles)}): ").strip()
         except EOFError as exc:
             raise ChatConfigurationError("모델 선택 입력이 종료되었습니다.") from exc
 
@@ -731,26 +739,19 @@ def parse_args() -> argparse.Namespace:
         description="한국어 SentencePiece Transformer 대화형 추론"
     )
     parser.add_argument(
-        "--profile",
-        choices=sorted(MODEL_PROFILES),
-        help="번호 선택을 건너뛰고 사용할 tokenizer/checkpoint 프로필을 지정합니다.",
-    )
-    parser.add_argument(
         "--tokenizer-path",
         type=Path,
-        help="프로필의 기본 SentencePiece .model 경로를 대체합니다.",
+        help="번호 선택을 건너뛰고 사용할 SentencePiece .model 경로입니다.",
     )
     parser.add_argument(
         "--checkpoint-path",
         type=Path,
-        help="프로필의 기본 PyTorch .pt 경로를 대체합니다.",
+        help="번호 선택을 건너뛰고 사용할 PyTorch .pt 경로입니다.",
     )
-    parser.add_argument(
-        "--list-profiles",
-        action="store_true",
-        help="프로필별 기본 경로와 파일 존재 여부를 출력하고 종료합니다.",
-    )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if (args.tokenizer_path is None) != (args.checkpoint_path is None):
+        parser.error("--tokenizer-path와 --checkpoint-path는 함께 지정해야 합니다.")
+    return args
 
 
 def handle_sigint(_signum: int, _frame: Any) -> None:
@@ -761,22 +762,28 @@ def handle_sigint(_signum: int, _frame: Any) -> None:
 def main() -> int:
     signal.signal(signal.SIGINT, handle_sigint)
     args = parse_args()
-    if args.list_profiles:
-        list_profiles()
-        return 0
 
     try:
-        profile = MODEL_PROFILES[args.profile] if args.profile else select_profile()
+        if args.tokenizer_path is not None:
+            tokenizer_path = args.tokenizer_path.expanduser().resolve()
+            checkpoint_path = args.checkpoint_path.expanduser().resolve()
+            profile = ModelProfile(
+                tokenizer_id=tokenizer_id_from_path(tokenizer_path),
+                tokenizer_path=tokenizer_path,
+                checkpoint_path=checkpoint_path,
+            )
+        else:
+            profile = select_profile(discover_model_profiles())
+            tokenizer_path = profile.tokenizer_path.resolve()
+            checkpoint_path = profile.checkpoint_path.resolve()
     except ChatConfigurationError as exc:
         print(f"설정 오류: {exc}", file=sys.stderr)
         return 1
 
-    tokenizer_path = (args.tokenizer_path or profile.tokenizer_path).expanduser().resolve()
-    checkpoint_path = (args.checkpoint_path or profile.checkpoint_path).expanduser().resolve()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     try:
-        runtime, hash_verified = build_runtime(
+        runtime = build_runtime(
             profile,
             tokenizer_path,
             checkpoint_path,
@@ -786,17 +793,11 @@ def main() -> int:
         print(f"설정 오류: {exc}", file=sys.stderr)
         return 1
 
-    print(f"프로필: {profile.name} ({profile.tokenizer_type})")
+    print(f"tokenizer ID: {profile.tokenizer_id}")
     print(f"device: {device}")
     print(f"tokenizer: {tokenizer_path}")
     print(f"checkpoint: {checkpoint_path}")
-    if hash_verified:
-        print("호환성 검사: tokenizer SHA-256까지 일치합니다.")
-    else:
-        print(
-            "호환성 검사: 구조·vocab·특수 token이 일치합니다. "
-            "(체크포인트에 tokenizer SHA-256 메타데이터 없음)"
-        )
+    print("호환성 검사: 구조·vocab·특수 token이 일치합니다.")
 
     run_chat(runtime)
     return 0
